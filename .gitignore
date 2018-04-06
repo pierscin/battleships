@@ -1,0 +1,14 @@
+*.sqlite
+
+venv
+
+.env
+.env-mysql
+
+__pycache__
+.pytest_cache
+
+sandbox
+bak
+.DS_Store
+.idea
