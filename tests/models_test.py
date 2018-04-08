@@ -2,34 +2,49 @@ from random import choice
 from typing import Tuple
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from models import Board, Player, Game, Base
+from app.models import Board, Player, Game
+from config import TestConfig
 
 
 @pytest.fixture(scope='module')
-def db_engine():
-    """Create DB engine and tables for models."""
-    engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
-    return engine
+def app():
+    from app import create_app
+
+    app = create_app(TestConfig)
+
+    ctx = app.app_context()
+    ctx.push()
+
+    yield app
+
+    ctx.pop()
+
+
+@pytest.fixture(scope='module')
+def db(app):
+    from app import db as _db
+
+    _db.create_all()
+
+    yield _db
+
+    _db.drop_all()
 
 
 @pytest.fixture()
-def session(db_engine):
-    """Create session and revert every action made to the db."""
-    connection = db_engine.connect()
+def session(db):
+    connection = db.engine.connect()
     transaction = connection.begin()
 
-    Session = sessionmaker(bind=connection)
-    session = Session()
+    session = db.create_scoped_session(options={'bind': connection, 'binds': {}})
+    db.session = session
 
     yield session
 
-    session.close()
     transaction.rollback()
     connection.close()
+    session.remove()
 
 
 @pytest.fixture
@@ -219,7 +234,7 @@ def test_join_more_than_two_players_is_illegal(player1, player2, board_factory, 
     g = Game()
 
     g.join(player1)
-    g.save_to_db(session)
+    g.save_to_db()
 
     with pytest.raises(ValueError, message="First player can't join the same game twice"):
         g.join(player1)
@@ -238,7 +253,7 @@ def test_second_join_raises_exception_when_no_id_for_first_player(player1, playe
     with pytest.raises(ValueError, message="First player should have no id from database (no commit before)"):
         g.join(player2)
 
-    g.save_to_db(session)
+    g.save_to_db()
 
     g.join(player2)
 
@@ -251,14 +266,14 @@ def test_illegal_move_raises_exception(player1, player2, session):
 
     g.join(player1)
 
-    g.save_to_db(session)
+    g.save_to_db()
 
     with pytest.raises(ValueError, message="Illegal move - second player has not joined this game"):
         g.shoot(player1.name, 0, 0)
 
     g.join(player2)
 
-    g.save_to_db(session)
+    g.save_to_db()
 
     g.shoot(player1.name, 0, 0)
 
@@ -274,7 +289,7 @@ def test_illegal_move_raises_exception(player1, player2, session):
 def test_game_flow(player1, player2, session):
     g = Game()
 
-    g.save_to_db(session)
+    g.save_to_db()
 
     assert g.state == g.State.NEW
     assert g.current is None
@@ -282,7 +297,7 @@ def test_game_flow(player1, player2, session):
 
     g.join(player1)
 
-    g.save_to_db(session)
+    g.save_to_db()
 
     assert g.state == g.State.NEW
     assert g.current is player1
@@ -290,7 +305,7 @@ def test_game_flow(player1, player2, session):
 
     g.join(player2)
 
-    g.save_to_db(session)
+    g.save_to_db()
 
     assert g.state == g.State.PLAYING
     assert g.current is player1
@@ -298,7 +313,7 @@ def test_game_flow(player1, player2, session):
 
     assert g.winner() is None
 
-    g.save_to_db(session)
+    g.save_to_db()
 
     ships = ships_locations(player1.board)
 

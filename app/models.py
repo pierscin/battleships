@@ -14,11 +14,7 @@ from collections import namedtuple, Counter
 from enum import Enum, auto
 from typing import Optional, List, Set
 
-from sqlalchemy import Column, Integer, String, ForeignKey, Enum as DbEnum
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, Session
-
-Base = declarative_base()
+from app import db
 
 Ship = namedtuple('Ship', ['name', 'symbol', 'size'])
 
@@ -31,7 +27,7 @@ symbol_to_ship = {
 }
 
 
-class Board(Base):
+class Board(db.Model):
     """Board is the main component of the game.
 
     It is created from a string of length == 100 which should represent a valid starting grid.
@@ -44,12 +40,12 @@ class Board(Base):
 
     __tablename__ = 'boards'
 
-    id = Column(Integer, primary_key=True)
-    starting_grid = Column(String(100))
-    grid = Column(String(100))
+    id = db.Column(db.Integer, primary_key=True)
+    starting_grid = db.Column(db.String(100))
+    grid = db.Column(db.String(100))
 
-    player = relationship('Player', back_populates='board')
-    player_id = Column(Integer, ForeignKey('players.id'))
+    player = db.relationship('Player', back_populates='board')
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'))
 
     def __init__(self, starting_grid: str):
         self.validate_starting_grid(starting_grid)
@@ -163,20 +159,20 @@ class Board(Base):
                 raise ValueError(f"Ship {s.symbol} is not placed correctly.\n{matrix_grid}")
 
 
-class Player(Base):
+class Player(db.Model):
     """Player ties name and board together."""
 
     __tablename__ = 'players'
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(50))
-    board = relationship('Board', back_populates='player', uselist=False)
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50))
+    board = db.relationship('Board', back_populates='player', uselist=False)
 
-    game_id = Column(Integer, ForeignKey('games.id'))
-    game = relationship('Game', back_populates='players')
+    game_id = db.Column(db.Integer, db.ForeignKey('games.id'))
+    game = db.relationship('Game', back_populates='players')
 
 
-class Game(Base):
+class Game(db.Model):
     """Game is an object which couples players and their actions.
 
     When both players are in game, they shoot in turns until one of the players have no ships.
@@ -193,11 +189,11 @@ class Game(Base):
 
     __tablename__ = 'games'
 
-    id = Column(Integer, primary_key=True)
-    state = Column(DbEnum(State))
+    id = db.Column(db.Integer, primary_key=True)
+    state = db.Column(db.Enum(State))
 
-    players = relationship('Player', back_populates='game', order_by='Player.id')
-    current_idx = Column(Integer)
+    players = db.relationship('Player', back_populates='game', order_by='Player.id')
+    current_idx = db.Column(db.Integer)
 
     def __init__(self):
         super().__init__()
@@ -255,6 +251,6 @@ class Game(Base):
     def winner(self) -> Optional[Player]:
         return self.current if self.state == self.State.FINISHED else None
 
-    def save_to_db(self, session: Session):
-        session.add(self)
-        session.commit()
+    def save_to_db(self):
+        db.session.add(self)
+        db.session.commit()

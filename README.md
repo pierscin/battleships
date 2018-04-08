@@ -3,9 +3,9 @@
 
 # battleships
 
-💥Battleships with Python.
+💥Battleships with Python and Flask.
 
-Version with in memory models.
+Version with Flask and SQLite database.
 
 ## Quick setup
 
@@ -21,4 +21,23 @@ After activating venv, tests can be run from the root of this repository with:
 
 ```
 pytest
+```
+
+To **run application** `FLASK_APP` has to point where `app`:
+
+```
+export FLASK_APP=battleships.py
+```
+
+Database setup commands:
+
+```
+flask db init
+flask db migrate
+flask db upgrade
+```
+
+Running the app:
+```
+flask run
 ```
