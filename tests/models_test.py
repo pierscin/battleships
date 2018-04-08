@@ -2,8 +2,34 @@ from random import choice
 from typing import Tuple
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from models import Board, Player, Game
+from models import Board, Player, Game, Base
+
+
+@pytest.fixture(scope='module')
+def db_engine():
+    """Create DB engine and tables for models."""
+    engine = create_engine('sqlite:///:memory:')
+    Base.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture()
+def session(db_engine):
+    """Create session and revert every action made to the db."""
+    connection = db_engine.connect()
+    transaction = connection.begin()
+
+    Session = sessionmaker(bind=connection)
+    session = Session()
+
+    yield session
+
+    session.close()
+    transaction.rollback()
+    connection.close()
 
 
 @pytest.fixture
@@ -27,12 +53,12 @@ def board_factory():
 
 @pytest.fixture
 def player1(board_factory):
-    return Player('p1', board_factory())
+    return Player(name='p1', board=board_factory())
 
 
 @pytest.fixture
 def player2(board_factory):
-    return Player('p2', board_factory())
+    return Player(name='p2', board=board_factory())
 
 
 def ships_locations(board: Board) -> Tuple[Tuple[int, ...], ...]:
@@ -140,7 +166,7 @@ def test_starting_grid_validation():
     }
 
     for grid in invalid_grids:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, message="This starting grid is invalid"):
             Board(grid)
 
 
@@ -189,42 +215,66 @@ def test_sinking_everything(board_factory):
     assert board.no_ships()
 
 
-def test_join_more_than_two_players_is_illegal(player1, player2, board_factory):
+def test_join_more_than_two_players_is_illegal(player1, player2, board_factory, session):
     g = Game()
 
     g.join(player1)
+    g.save_to_db(session)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, message="First player can't join the same game twice"):
         g.join(player1)
 
     g.join(player2)
 
-    with pytest.raises(ValueError):
-        g.join(Player("Third player", board_factory()))
+    with pytest.raises(ValueError, message="Game can only have 2 players"):
+        g.join(Player(name="Third player", board=board_factory()))
 
 
-def test_illegal_move_raises_exception(player1, player2):
+def test_second_join_raises_exception_when_no_id_for_first_player(player1, player2, session):
     g = Game()
 
-    with pytest.raises(ValueError):
+    g.join(player1)
+
+    with pytest.raises(ValueError, message="First player should have no id from database (no commit before)"):
+        g.join(player2)
+
+    g.save_to_db(session)
+
+    g.join(player2)
+
+
+def test_illegal_move_raises_exception(player1, player2, session):
+    g = Game()
+
+    with pytest.raises(ValueError, message="Illegal move - no players in game"):
         g.shoot("", 0, 0)
 
     g.join(player1)
 
-    with pytest.raises(ValueError):
+    g.save_to_db(session)
+
+    with pytest.raises(ValueError, message="Illegal move - second player has not joined this game"):
         g.shoot(player1.name, 0, 0)
 
     g.join(player2)
 
+    g.save_to_db(session)
+
     g.shoot(player1.name, 0, 0)
+
+    with pytest.raises(ValueError, message="Illegal move - first player moved out of his turn"):
+        g.shoot(player1.name, 0, 1)
+
     g.shoot(player2.name, 0, 0)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, message="Illegal move - action was already taken on that field"):
         g.shoot(player1.name, 0, 0)
 
 
-def test_game_flow(player1, player2):
+def test_game_flow(player1, player2, session):
     g = Game()
+
+    g.save_to_db(session)
 
     assert g.state == g.State.NEW
     assert g.current is None
@@ -232,17 +282,23 @@ def test_game_flow(player1, player2):
 
     g.join(player1)
 
+    g.save_to_db(session)
+
     assert g.state == g.State.NEW
     assert g.current is player1
     assert g.other is None
 
     g.join(player2)
 
+    g.save_to_db(session)
+
     assert g.state == g.State.PLAYING
     assert g.current is player1
     assert g.other is player2
 
     assert g.winner() is None
+
+    g.save_to_db(session)
 
     ships = ships_locations(player1.board)
 

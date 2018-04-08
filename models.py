@@ -14,6 +14,12 @@ from collections import namedtuple, Counter
 from enum import Enum, auto
 from typing import Optional, List, Set
 
+from sqlalchemy import Column, Integer, String, ForeignKey, Enum as DbEnum
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, Session
+
+Base = declarative_base()
+
 Ship = namedtuple('Ship', ['name', 'symbol', 'size'])
 
 symbol_to_ship = {
@@ -25,7 +31,7 @@ symbol_to_ship = {
 }
 
 
-class Board:
+class Board(Base):
     """Board is the main component of the game.
 
     It is created from a string of length == 100 which should represent a valid starting grid.
@@ -36,11 +42,20 @@ class Board:
     ACTIONS = {HIT, MISS, SUNK}
     NO_ACTION = '.'
 
+    __tablename__ = 'boards'
+
+    id = Column(Integer, primary_key=True)
+    starting_grid = Column(String(100))
+    grid = Column(String(100))
+
+    player = relationship('Player', back_populates='board')
+    player_id = Column(Integer, ForeignKey('players.id'))
+
     def __init__(self, starting_grid: str):
         self.validate_starting_grid(starting_grid)
 
-        self.starting_grid = starting_grid
-        self.grid = starting_grid
+        super().__init__(starting_grid=starting_grid,
+                         grid=starting_grid)
 
     def enemy_view(self) -> str:
         """How enemy views this board."""
@@ -148,15 +163,20 @@ class Board:
                 raise ValueError(f"Ship {s.symbol} is not placed correctly.\n{matrix_grid}")
 
 
-class Player:
+class Player(Base):
     """Player ties name and board together."""
 
-    def __init__(self, name: str, board: Board):
-        self.name = name
-        self.board = board
+    __tablename__ = 'players'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50))
+    board = relationship('Board', back_populates='player', uselist=False)
+
+    game_id = Column(Integer, ForeignKey('games.id'))
+    game = relationship('Game', back_populates='players')
 
 
-class Game:
+class Game(Base):
     """Game is an object which couples players and their actions.
 
     When both players are in game, they shoot in turns until one of the players have no ships.
@@ -171,24 +191,42 @@ class Game:
         PLAYING = auto()
         FINISHED = auto()
 
+    __tablename__ = 'games'
+
+    id = Column(Integer, primary_key=True)
+    state = Column(DbEnum(State))
+
+    players = relationship('Player', back_populates='game', order_by='Player.id')
+    current_idx = Column(Integer)
+
     def __init__(self):
-        self.current = None
-        self.other = None
+        super().__init__()
 
         self.state = self.State.NEW
+
+    @property
+    def current(self):
+        return self.players[self.current_idx] if len(self.players) else None
+
+    @property
+    def other(self):
+        return self.players[(self.current_idx + 1) % 2] if len(self.players) == 2 else None
 
     def join(self, player: Player):
         """Join new player to the game."""
         if self.state != self.State.NEW:
             raise ValueError(f"Can't join players when game is not in state NEW. State={self.state}")
 
-        if self.current is None:
-            self.current = player
+        if self.current_idx is None:
+            self.current_idx = 0
+        elif self.players[self.current_idx].id is None:
+            raise ValueError("No database id for current player - commit first.")
+        elif self.players[self.current_idx].id == player.id:
+            raise ValueError("Player can't join the same game twice.")
         else:
-            if self.current is player:
-                raise ValueError(f"Player can't join the same game twice.")
-            self.other = player
             self.state = self.State.PLAYING
+
+        player.game = self
 
     def shoot(self, player_name: str, x: int, y: int) -> str:
         """Try to shoot as player.
@@ -199,23 +237,24 @@ class Game:
         Raises:
             ValueError if shot cannot be taken.
         """
-        if self.current is None:
-            raise ValueError(f"No players in game")
+        if self.state != self.State.PLAYING:
+            raise ValueError(f"Game is in state '{self.state}' - can't shoot.")
 
         if self.current.name != player_name:
             raise ValueError(f"It's '{self.current.name}' turn")
-
-        if self.state != self.State.PLAYING:
-            raise ValueError(f"Game is in state '{self.state}' - can't shoot.")
 
         result = self.other.board.shoot(x, y)
 
         if self.other.board.no_ships():
             self.state = self.State.FINISHED
         else:
-            self.other, self.current = self.current, self.other
+            self.current_idx = (self.current_idx + 1) % 2
 
         return result
 
     def winner(self) -> Optional[Player]:
         return self.current if self.state == self.State.FINISHED else None
+
+    def save_to_db(self, session: Session):
+        session.add(self)
+        session.commit()
