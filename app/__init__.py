@@ -15,13 +15,17 @@ migrate = Migrate()
 
 def create_app(config: Type[Config] = Config) -> Flask:
     """Creates app based on passed config."""
-    app = Flask(__name__)
+    app = ApiFlask(__name__)
 
     app.config.from_object(config)
 
     db.init_app(app)
     migrate.init_app(app, db)
 
+    from app.api import bp as api_bp
+
+    app.register_blueprint(api_bp, url_prefix='/api')
+
     return app
 
-from app import models
+from app.api import ApiFlask

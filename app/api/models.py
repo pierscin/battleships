@@ -254,3 +254,12 @@ class Game(db.Model):
     def save_to_db(self):
         db.session.add(self)
         db.session.commit()
+
+    @staticmethod
+    def get_new_game():
+        g = Game.query.filter_by(state=Game.State.NEW).first()
+
+        if g is None:
+            g = Game()
+
+        return g
