@@ -46,7 +46,7 @@ flask run
 
 Those can be often copy-pasted to the new project and tailored to fit your needs.
 
-- [application factory](https://github.com/pierscin/battleships/app/__init__.py#L16)
+- [application factory](https://github.com/pierscin/battleships/blob/df9a9d073ab8f9aa6b851eded6194530953d64ee/app/__init__.py#L16)
 - [Config class](https://github.com/pierscin/battleships/blob/6f4688f51a56f34446cd2e2d7baaed93c125e1ab/config.py#L11)
 - `pytest` fixtures for [app creation](https://github.com/pierscin/battleships/blob/6f4688f51a56f34446cd2e2d7baaed93c125e1ab/tests/conftest.py#L8),
 [in-memory db](https://github.com/pierscin/battleships/blob/6f4688f51a56f34446cd2e2d7baaed93c125e1ab/tests/conftest.py#L22),
