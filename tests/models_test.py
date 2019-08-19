@@ -155,6 +155,7 @@ def test_illegal_double_action(board_factory):
     board = board_factory()
     x, y = choice(ships_locations(board))
 
+
     assert 'Hit' in board.shoot(x, y)
 
     with pytest.raises(ValueError):
